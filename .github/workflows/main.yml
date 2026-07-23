@@ -48,8 +48,8 @@ jobs:
           Write-Host ""
           Write-Host "==========================="
           Write-Host "RDP ADDRESS : $ip"
-          Write-Host "USERNAME    : user1"
-          Write-Host "PASSWORD    : pass1"
+          Write-Host "USERNAME    : 1"
+          Write-Host "PASSWORD    : 1"
           Write-Host "==========================="
 
       - name: Keep Runner Alive
