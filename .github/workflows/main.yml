@@ -21,44 +21,33 @@ jobs:
 
           Restart-Service TermService -Force
 
-      - name: Create RDP User with Secure Password
+      - name: Create RDP User
         shell: pwsh
         run: |
           Add-Type -AssemblyName System.Security
 
-          $charSet = @{
-            Upper   = [char[]](65..90)
-            Lower   = [char[]](97..122)
-            Number  = [char[]](48..57)
-            Special = ([char[]](33..47) + [char[]](58..64) + [char[]](91..96) + [char[]](123..126))
-          }
-
-          $raw = @()
-          $raw += $charSet.Upper | Get-Random -Count 4
-          $raw += $charSet.Lower | Get-Random -Count 4
-          $raw += $charSet.Number | Get-Random -Count 4
-          $raw += $charSet.Special | Get-Random -Count 4
-
-          $password = -join ($raw | Sort-Object { Get-Random })
+          $chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-="
+          $password = -join (1..20 | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
 
           $secure = ConvertTo-SecureString $password -AsPlainText -Force
 
+          if (Get-LocalUser -Name "RDP" -ErrorAction SilentlyContinue) {
+            Remove-LocalUser -Name "RDP"
+          }
+
           New-LocalUser -Name "RDP" -Password $secure -AccountNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member "RDP"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
+          Add-LocalGroupMember -Group Administrators -Member RDP
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member RDP
 
           echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
 
       - name: Install Tailscale
         shell: pwsh
         run: |
-          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
-          $msi = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi" -OutFile "$env:TEMP\tailscale.msi"
+          Start-Process msiexec.exe -ArgumentList "/i `"$env:TEMP\tailscale.msi`" /quiet /norestart" -Wait
 
-          Invoke-WebRequest $url -OutFile $msi
-          Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /quiet /norestart" -Wait
-
-      - name: Establish Tailscale Connection
+      - name: Connect Tailscale
         shell: pwsh
         run: |
           & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }}
@@ -67,25 +56,30 @@ jobs:
 
           echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
 
-      - name: Verify RDP Accessibility
+      - name: Verify RDP
         shell: pwsh
         run: |
           Test-NetConnection $env:TAILSCALE_IP -Port 3389
 
-      - name: Show RDP Info
+      - name: Show RDP Information
         shell: pwsh
         run: |
-          Write-Host ""
-          Write-Host "==============================="
-          Write-Host "RDP Address : $env:TAILSCALE_IP"
-          Write-Host "Username    : RDP"
-          Write-Host "Password    : $env:RDP_PASSWORD"
-          Write-Host "==============================="
+          @"
+          # RDP Information
 
-      - name: Maintain Connection
+          Address: $env:TAILSCALE_IP
+
+          Username: RDP
+
+          Password: $env:RDP_PASSWORD
+          "@ >> $env:GITHUB_STEP_SUMMARY
+
+          Write-Host "RDP information written to Summary."
+
+      - name: Keep Runner Alive
         shell: pwsh
         run: |
           while ($true) {
-            Write-Host "[$(Get-Date)] RDP Active"
+            Write-Host "Runner alive: $(Get-Date)"
             Start-Sleep -Seconds 60
           }
